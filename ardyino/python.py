@@ -6,7 +6,7 @@ from pynput.keyboard import Controller as KeyboardController
 from pynput.keyboard import Key
 
 # --- Configuration ---
-COM_PORT = 'COM8'  # Update this!
+COM_PORT = 'COM3'  # Make sure this matches your RECEIVER Arduino's port
 BAUD_RATE = 115200
 
 JOYSTICK_LOWER = 400
@@ -25,7 +25,7 @@ glove_button_states = {
     'middle': False,
     'ring': False,
     'pinky': False,
-    'joyClick': False # NEW Tracker
+    'joyClick': False
 }
 
 def update_keyboard(key, should_be_pressed):
@@ -50,7 +50,7 @@ def main():
     try:
         arduino = serial.Serial(COM_PORT, BAUD_RATE, timeout=1)
         time.sleep(2)
-        print(f"Connected to {COM_PORT}. Glove active!")
+        print(f"Connected to Dongle on {COM_PORT}. Wireless Glove active!")
         
         while True:
             if arduino.in_waiting > 0:
@@ -59,49 +59,38 @@ def main():
                 
                 data_list = raw_data.split(',')
                 
-                # Now looking for 13 values!
-                if len(data_list) == 13:
+                # We are now looking for exactly 9 values from the Receiver
+                if len(data_list) == 9:
                     try:
                         joyX = int(data_list[0])
                         joyY = int(data_list[1])
-                        gyroX = float(data_list[5])
-                        gyroY = float(data_list[6])
+                        gyroX = float(data_list[2])
+                        gyroY = float(data_list[3])
                         
-                        # Buttons (1 = Pressed, 0 = Released)
-                        btnIndex = int(data_list[8]) == 1
-                        btnMiddle = int(data_list[9]) == 1
-                        btnRing = int(data_list[10]) == 1
-                        btnPinky = int(data_list[11]) == 1
-                        btnJoyClick = int(data_list[12]) == 1 # NEW Joystick Click
+                        btnIndex = int(data_list[4]) == 1
+                        btnMiddle = int(data_list[5]) == 1
+                        btnRing = int(data_list[6]) == 1
+                        btnPinky = int(data_list[7]) == 1
+                        btnJoyClick = int(data_list[8]) == 1 
                         
                         # 1. JOYSTICK (WASD)
-                        update_keyboard('a', joyX < JOYSTICK_LOWER)
-                        update_keyboard('d', joyX > JOYSTICK_UPPER)
-                        update_keyboard('w', joyY < JOYSTICK_LOWER)
-                        update_keyboard('s', joyY > JOYSTICK_UPPER)
+                        update_keyboard('w', joyX < JOYSTICK_LOWER)
+                        update_keyboard('s', joyX > JOYSTICK_UPPER)
+                        update_keyboard('d', joyY < JOYSTICK_LOWER)
+                        update_keyboard('a', joyY > JOYSTICK_UPPER)
 
                         # 2. GYRO (MOUSE MOVEMENT)
                         move_x, move_y = 0, 0
                         if abs(gyroX) > GYRO_DEADZONE: move_x = gyroX * MOUSE_SENSITIVITY
                         if abs(gyroY) > GYRO_DEADZONE: move_y = gyroY * MOUSE_SENSITIVITY
                         if move_x != 0 or move_y != 0:
-                            mouse.move(int(-move_x), int(-move_y)) 
-
+                            mouse.move(int(-move_x), int(move_y)) 
+    
                         # 3. FINGER & JOYSTICK BUTTONS
-                        # Index -> Left Click
-                        update_mouse_button('index', MouseButton.left, btnIndex)
-                        
-                        # Middle -> Right Click
-                        update_mouse_button('middle', MouseButton.right, btnMiddle)
-                        
-                        # Ring -> Spacebar (Jump)
+                        update_mouse_button('index', MouseButton.right, btnIndex)
+                        update_mouse_button('middle', MouseButton.left, btnMiddle)
                         update_keyboard(Key.space, btnRing)
-                        
-                        # Pinky -> 'I' (Interact) - UPDATED!
-                        update_keyboard('i', btnPinky)
-                        
-                        # Joystick Click -> Left Control (Crouch) - NEW!
-                        # (Change 'Key.ctrl_l' to 'c' if your game uses C to crouch)
+                        update_keyboard('e', btnPinky)
                         update_keyboard(Key.ctrl_l, btnJoyClick)
 
                     except ValueError:

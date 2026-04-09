@@ -1,70 +1,98 @@
+#include <SPI.h>
+#include <nRF24L01.h>
+#include <RF24.h>
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 #include <Wire.h>
 
 Adafruit_MPU6050 mpu;
 
-// Joystick Pins
+// --- Radio Setup ---
+// CE is on 9, CSN is on 8
+RF24 radio(9, 8); 
+const byte address[6] = "00001"; // The "channel" we are broadcasting on
+
+// --- Pin Assignments ---
 const int VRxPin = A0;
 const int VRyPin = A1;
-const int joySwPin = 7; // NEW: Joystick click button
+const int joySwPin = 10;      // Moved to 5 because Pinky is on 7!
 
-// Button Pins (Index, Middle, Ring, Pinky)
-const int numButtons = 4;
-const int buttonPins[4] = {3, 4, 12, 13 };
+const int btnIndexPin = 3;
+const int btnMiddlePin = 4;
+const int btnRingPin = 6;    // Updated!
+const int btnPinkyPin = 7;   // Updated!
+
+// --- The Data Packet ---
+// This is the exact package we will send over the air.
+// The receiver Arduino MUST have this exact same struct to decode it.
+struct DataPacket {
+  int joyX;
+  int joyY;
+  float gyroX;
+  float gyroY;
+  byte btnIndex;
+  byte btnMiddle;
+  byte btnRing;
+  byte btnPinky;
+  byte btnJoyClick;
+};
+
+DataPacket gloveData; // Create a variable to hold our data
 
 void setup() {
   Serial.begin(115200);
-  while (!Serial) delay(10); 
 
+  // 1. Initialize MPU6050
   if (!mpu.begin()) {
     Serial.println("Error: MPU6050 not found!");
     while (1) delay(10);
   }
-  
   mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
   mpu.setGyroRange(MPU6050_RANGE_500_DEG);
   mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
 
-  // Initialize finger buttons
-  for (int i = 0; i < numButtons; i++) {
-    pinMode(buttonPins[i], INPUT_PULLUP);
+  // 2. Initialize Buttons (Using internal pull-ups)
+  pinMode(btnIndexPin, INPUT_PULLUP);
+  pinMode(btnMiddlePin, INPUT_PULLUP);
+  pinMode(btnRingPin, INPUT_PULLUP);
+  pinMode(btnPinkyPin, INPUT_PULLUP);
+  pinMode(joySwPin, INPUT_PULLUP);
+
+  // 3. Initialize NRF24L01 Radio
+  if (!radio.begin()) {
+    Serial.println("Error: NRF24 not responding! Check wiring.");
+    while (1) delay(10);
   }
   
-  // Initialize joystick button
-  pinMode(joySwPin, INPUT_PULLUP);
+  radio.openWritingPipe(address);
+  // Using LOW power is CRITICAL since we aren't using a capacitor on the 3.3V line.
+  // This prevents power spikes from crashing the MPU6050.
+  radio.setPALevel(RF24_PA_LOW); 
+  radio.setDataRate(RF24_1MBPS);
+  radio.stopListening(); // Tell it to act as a Transmitter
 }
 
 void loop() {
   // 1. Read Joystick
-  int joyX = analogRead(VRxPin);
-  int joyY = analogRead(VRyPin);
+  gloveData.joyX = analogRead(VRxPin);
+  gloveData.joyY = analogRead(VRyPin);
 
-  // 2. Read MPU6050
+  // 2. Read MPU6050 Gyro
   sensors_event_t a, g, temp;
   mpu.getEvent(&a, &g, &temp);
+  gloveData.gyroX = g.gyro.x;
+  gloveData.gyroY = g.gyro.y;
 
   // 3. Read Buttons (Convert LOW to 1 for "Pressed")
-  int btnIndex  = (digitalRead(buttonPins[0]) == LOW) ? 1 : 0;
-  int btnMiddle = (digitalRead(buttonPins[1]) == LOW) ? 1 : 0;
-  int btnRing   = (digitalRead(buttonPins[2]) == LOW) ? 1 : 0;
-  int btnPinky  = (digitalRead(buttonPins[3]) == LOW) ? 1 : 0;
-  int btnJoyClick = (digitalRead(joySwPin) == LOW) ? 1 : 0; // NEW: Joystick Click
+  gloveData.btnIndex = (digitalRead(btnIndexPin) == LOW) ? 1 : 0;
+  gloveData.btnMiddle = (digitalRead(btnMiddlePin) == LOW) ? 1 : 0;
+  gloveData.btnRing = (digitalRead(btnRingPin) == LOW) ? 1 : 0;
+  gloveData.btnPinky = (digitalRead(btnPinkyPin) == LOW) ? 1 : 0;
+  gloveData.btnJoyClick = (digitalRead(joySwPin) == LOW) ? 1 : 0;
 
-  // 4. Print as CSV (Now 13 values!)
-  Serial.print(joyX); Serial.print(",");
-  Serial.print(joyY); Serial.print(",");
-  Serial.print(a.acceleration.x); Serial.print(",");
-  Serial.print(a.acceleration.y); Serial.print(",");
-  Serial.print(a.acceleration.z); Serial.print(",");
-  Serial.print(g.gyro.x); Serial.print(",");
-  Serial.print(g.gyro.y); Serial.print(",");
-  Serial.print(g.gyro.z); Serial.print(",");
-  Serial.print(btnIndex); Serial.print(",");
-  Serial.print(btnMiddle); Serial.print(",");
-  Serial.print(btnRing); Serial.print(",");
-  Serial.print(btnPinky); Serial.print(",");
-  Serial.println(btnJoyClick); // Moved println to the final value
+  // 4. Send Data Wirelessly!
+  radio.write(&gloveData, sizeof(DataPacket));
 
-  delay(10);
+  // Run at ~100Hz
+  delay(1000); 
 }
