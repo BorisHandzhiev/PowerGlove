@@ -6,13 +6,13 @@ from pynput.keyboard import Controller as KeyboardController
 from pynput.keyboard import Key
 
 # --- Configuration ---
-COM_PORT = 'COM3'  # Update if necessary
+COM_PORT = 'COM3'  # Make sure this matches your RECEIVER Arduino's port
 BAUD_RATE = 115200
 
 JOYSTICK_LOWER = 400
 JOYSTICK_UPPER = 600
 GYRO_DEADZONE = 0.15      
-MOUSE_SENSITIVITY = 15.0  
+MOUSE_SENSITIVITY = 10
 
 mouse = MouseController()
 keyboard = KeyboardController()
@@ -36,7 +36,7 @@ def parse_key_input(input_str):
     """Converts user text into a pynput Key object or character."""
     input_str = input_str.strip().lower()
     
-    # Dictionary of special keys you might want to use
+    # Dictionary of special keys
     special_keys = {
         'space': Key.space,
         'shift': Key.shift,
@@ -51,7 +51,7 @@ def parse_key_input(input_str):
     if input_str in special_keys:
         return special_keys[input_str]
     elif len(input_str) > 0:
-        return input_str[0] # Return just the first character if it's a letter/number
+        return input_str[0] 
     return None
 
 def run_startup_menu():
@@ -81,7 +81,7 @@ def run_startup_menu():
         if parsed_pinky:
             pinky_key_bind = parsed_pinky
             
-    # Quick visual confirmation of what is set
+    # Quick visual confirmation
     print("\n--- Current Key Bindings ---")
     ring_display = ring_key_bind.name if isinstance(ring_key_bind, Key) else ring_key_bind
     pinky_display = pinky_key_bind.name if isinstance(pinky_key_bind, Key) else pinky_key_bind
@@ -108,13 +108,14 @@ def update_mouse_button(btn_name, mouse_button, should_be_pressed):
         glove_button_states[btn_name] = False
 
 def main():
-    # Run the menu before opening the serial port
+    # Run the menu before looking for the Arduino
     run_startup_menu()
-    
+
     try:
         arduino = serial.Serial(COM_PORT, BAUD_RATE, timeout=1)
-        time.sleep(2) # Give the Arduino a moment to reset upon connection
-        print(f"Connected to Dongle on {COM_PORT}. Waiting for glove data...")
+        time.sleep(2)
+        print(f"Connected to Dongle on {COM_PORT}. Wireless Glove active!")
+        print("Note: Click the Joystick in to pause the camera! Index is Left Click, Middle is Right Click.")
         
         while True:
             if arduino.in_waiting > 0:
@@ -130,44 +131,46 @@ def main():
                         gyroX = float(data_list[2])
                         gyroY = float(data_list[3])
                         
-                        btnIndex = int(data_list[4]) == 1
-                        btnMiddle = int(data_list[5]) == 1
+                        btnIndex = int(data_list[5]) == 1
+                        btnMiddle = int(data_list[4]) == 1
                         btnRing = int(data_list[6]) == 1
                         btnPinky = int(data_list[7]) == 1
                         btnJoyClick = int(data_list[8]) == 1 
                         
                         # 1. JOYSTICK (WASD)
-                        update_keyboard('a', joyX < JOYSTICK_LOWER)
-                        update_keyboard('d', joyX > JOYSTICK_UPPER)
-                        update_keyboard('w', joyY < JOYSTICK_LOWER)
-                        update_keyboard('s', joyY > JOYSTICK_UPPER)
+                        update_keyboard('w', joyX < JOYSTICK_LOWER)
+                        update_keyboard('s', joyX > JOYSTICK_UPPER)
+                        update_keyboard('d', joyY < JOYSTICK_LOWER)
+                        update_keyboard('a', joyY > JOYSTICK_UPPER)
 
-                        # 2. GYRO (MOUSE MOVEMENT)
+                        # 2. GYRO (MOUSE MOVEMENT) - WITH JOYSTICK CLUTCH
                         move_x, move_y = 0, 0
-                        if abs(gyroX) > GYRO_DEADZONE: move_x = gyroX * MOUSE_SENSITIVITY
-                        if abs(gyroY) > GYRO_DEADZONE: move_y = gyroY * MOUSE_SENSITIVITY
-                        if move_x != 0 or move_y != 0:
-                            mouse.move(int(-move_x), int(-move_y)) 
-
-                        # 3. FINGER BUTTONS & JOYSTICK CLICK
+                        
+                        # Only move the camera if the JOYSTICK CLICK is NOT being pressed
+                        if not btnJoyClick:  
+                            if abs(gyroX) > GYRO_DEADZONE: move_x = gyroX * MOUSE_SENSITIVITY
+                            if abs(gyroY) > GYRO_DEADZONE: move_y = gyroY * MOUSE_SENSITIVITY
+                            if move_x != 0 or move_y != 0:
+                                mouse.move(int(-move_x), int(move_y)) 
+    
+                        # 3. FINGER BUTTONS
+                        
+                        # Pointer is safely Left Click, Middle is safely Right Click
                         update_mouse_button('index', MouseButton.left, btnIndex)
                         update_mouse_button('middle', MouseButton.right, btnMiddle)
                         
-                        # Dynamically use the assigned keys!
+                        # Use the dynamically assigned keys from the menu
                         update_keyboard(ring_key_bind, btnRing)
                         update_keyboard(pinky_key_bind, btnPinky)
-                        
-                        update_keyboard(Key.ctrl_l, btnJoyClick)
 
                     except ValueError:
-                        pass # Ignore corrupted packets
+                        pass 
 
     except serial.SerialException as e:
-        print(f"Connection error: {e}. Is the COM port correct?")
+        print(f"Connection error: {e}")
     except KeyboardInterrupt:
         print("\nReleasing keys and closing...")
     finally:
-        # Safety cleanup: Release any keys or buttons that might be stuck down
         for k in key_states:
             if key_states[k]: keyboard.release(k)
         for b_name, b_val in zip(['index', 'middle'], [MouseButton.left, MouseButton.right]):
