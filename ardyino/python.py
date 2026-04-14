@@ -6,7 +6,7 @@ from pynput.keyboard import Controller as KeyboardController
 from pynput.keyboard import Key
 
 # --- Configuration ---
-COM_PORT = 'COM3'  # Make sure this matches your RECEIVER Arduino's port
+COM_PORT = 'COM3'  # Update if necessary
 BAUD_RATE = 115200
 
 JOYSTICK_LOWER = 400
@@ -28,6 +28,67 @@ glove_button_states = {
     'joyClick': False
 }
 
+# --- Default Key Bindings ---
+ring_key_bind = Key.space
+pinky_key_bind = 'e'
+
+def parse_key_input(input_str):
+    """Converts user text into a pynput Key object or character."""
+    input_str = input_str.strip().lower()
+    
+    # Dictionary of special keys you might want to use
+    special_keys = {
+        'space': Key.space,
+        'shift': Key.shift,
+        'ctrl': Key.ctrl_l,
+        'alt': Key.alt_l,
+        'enter': Key.enter,
+        'tab': Key.tab,
+        'esc': Key.esc,
+        'backspace': Key.backspace
+    }
+    
+    if input_str in special_keys:
+        return special_keys[input_str]
+    elif len(input_str) > 0:
+        return input_str[0] # Return just the first character if it's a letter/number
+    return None
+
+def run_startup_menu():
+    """Shows a CLI menu to assign keys before the glove starts."""
+    global ring_key_bind, pinky_key_bind
+    
+    print("\n" + "="*30)
+    print(" 🎮 SMART GLOVE CONFIGURATOR 🎮")
+    print("="*30)
+    print("1. Start with Defaults (Ring: Space, Pinky: E)")
+    print("2. Custom Key Bindings")
+    
+    choice = input("\nSelect an option (1 or 2): ").strip()
+    
+    if choice == '2':
+        print("\n(Tip: Type a letter like 'r', 'f', 'q', or a special key like 'space', 'shift', 'ctrl')")
+        
+        # Get Ring Finger Mapping
+        ring_input = input("Enter key for RING finger: ")
+        parsed_ring = parse_key_input(ring_input)
+        if parsed_ring:
+            ring_key_bind = parsed_ring
+            
+        # Get Pinky Finger Mapping
+        pinky_input = input("Enter key for PINKY finger: ")
+        parsed_pinky = parse_key_input(pinky_input)
+        if parsed_pinky:
+            pinky_key_bind = parsed_pinky
+            
+    # Quick visual confirmation of what is set
+    print("\n--- Current Key Bindings ---")
+    ring_display = ring_key_bind.name if isinstance(ring_key_bind, Key) else ring_key_bind
+    pinky_display = pinky_key_bind.name if isinstance(pinky_key_bind, Key) else pinky_key_bind
+    print(f"Ring Finger  ->  [{ring_display}]")
+    print(f"Pinky Finger ->  [{pinky_display}]")
+    print("----------------------------\n")
+
 def update_keyboard(key, should_be_pressed):
     is_pressed = key_states.get(key, False)
     if should_be_pressed and not is_pressed:
@@ -47,10 +108,13 @@ def update_mouse_button(btn_name, mouse_button, should_be_pressed):
         glove_button_states[btn_name] = False
 
 def main():
+    # Run the menu before opening the serial port
+    run_startup_menu()
+    
     try:
         arduino = serial.Serial(COM_PORT, BAUD_RATE, timeout=1)
-        time.sleep(2)
-        print(f"Connected to Dongle on {COM_PORT}. Wireless Glove active!")
+        time.sleep(2) # Give the Arduino a moment to reset upon connection
+        print(f"Connected to Dongle on {COM_PORT}. Waiting for glove data...")
         
         while True:
             if arduino.in_waiting > 0:
@@ -59,7 +123,6 @@ def main():
                 
                 data_list = raw_data.split(',')
                 
-                # We are now looking for exactly 9 values from the Receiver
                 if len(data_list) == 9:
                     try:
                         joyX = int(data_list[0])
@@ -74,33 +137,37 @@ def main():
                         btnJoyClick = int(data_list[8]) == 1 
                         
                         # 1. JOYSTICK (WASD)
-                        update_keyboard('w', joyX < JOYSTICK_LOWER)
-                        update_keyboard('s', joyX > JOYSTICK_UPPER)
-                        update_keyboard('d', joyY < JOYSTICK_LOWER)
-                        update_keyboard('a', joyY > JOYSTICK_UPPER)
+                        update_keyboard('a', joyX < JOYSTICK_LOWER)
+                        update_keyboard('d', joyX > JOYSTICK_UPPER)
+                        update_keyboard('w', joyY < JOYSTICK_LOWER)
+                        update_keyboard('s', joyY > JOYSTICK_UPPER)
 
                         # 2. GYRO (MOUSE MOVEMENT)
                         move_x, move_y = 0, 0
                         if abs(gyroX) > GYRO_DEADZONE: move_x = gyroX * MOUSE_SENSITIVITY
                         if abs(gyroY) > GYRO_DEADZONE: move_y = gyroY * MOUSE_SENSITIVITY
                         if move_x != 0 or move_y != 0:
-                            mouse.move(int(-move_x), int(move_y)) 
-    
-                        # 3. FINGER & JOYSTICK BUTTONS
-                        update_mouse_button('index', MouseButton.right, btnIndex)
-                        update_mouse_button('middle', MouseButton.left, btnMiddle)
-                        update_keyboard(Key.space, btnRing)
-                        update_keyboard('e', btnPinky)
+                            mouse.move(int(-move_x), int(-move_y)) 
+
+                        # 3. FINGER BUTTONS & JOYSTICK CLICK
+                        update_mouse_button('index', MouseButton.left, btnIndex)
+                        update_mouse_button('middle', MouseButton.right, btnMiddle)
+                        
+                        # Dynamically use the assigned keys!
+                        update_keyboard(ring_key_bind, btnRing)
+                        update_keyboard(pinky_key_bind, btnPinky)
+                        
                         update_keyboard(Key.ctrl_l, btnJoyClick)
 
                     except ValueError:
-                        pass 
+                        pass # Ignore corrupted packets
 
     except serial.SerialException as e:
-        print(f"Connection error: {e}")
+        print(f"Connection error: {e}. Is the COM port correct?")
     except KeyboardInterrupt:
         print("\nReleasing keys and closing...")
     finally:
+        # Safety cleanup: Release any keys or buttons that might be stuck down
         for k in key_states:
             if key_states[k]: keyboard.release(k)
         for b_name, b_val in zip(['index', 'middle'], [MouseButton.left, MouseButton.right]):

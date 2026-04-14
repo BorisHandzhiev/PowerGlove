@@ -89,10 +89,10 @@ void loop() {
   gloveData.btnRing = (digitalRead(btnRingPin) == LOW) ? 1 : 0;
   gloveData.btnPinky = (digitalRead(btnPinkyPin) == LOW) ? 1 : 0;
   gloveData.btnJoyClick = (digitalRead(joySwPin) == LOW) ? 1 : 0;
-
+  
   // 4. Send Data Wirelessly!
   radio.write(&gloveData, sizeof(DataPacket));
 
   // Run at ~100Hz
-  delay(1000); 
+  delay(10); 
 }
