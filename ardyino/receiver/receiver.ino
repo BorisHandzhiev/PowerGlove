@@ -4,7 +4,7 @@
 
 // --- Radio Setup ---
 // CE is on 9, CSN is on 8 (Must match wiring!)
-RF24 radio(9, 8); 
+RF24 radio(10, 8); 
 const byte address[6] = "00001"; // Must match the transmitter's address
 
 // --- The Data Packet ---
