@@ -148,16 +148,16 @@ def main():
                         
                         # Only move the camera if the JOYSTICK CLICK is NOT being pressed
                         if not btnJoyClick:  
-                            if abs(gyroX) > GYRO_DEADZONE: move_x = gyroX * MOUSE_SENSITIVITY
-                            if abs(gyroY) > GYRO_DEADZONE: move_y = gyroY * MOUSE_SENSITIVITY
+                            if abs(gyroX) > GYRO_DEADZONE: move_x = gyroY * MOUSE_SENSITIVITY
+                            if abs(gyroY) > GYRO_DEADZONE: move_y = -gyroX * MOUSE_SENSITIVITY
                             if move_x != 0 or move_y != 0:
                                 mouse.move(int(-move_x), int(move_y)) 
     
                         # 3. FINGER BUTTONS
                         
                         # Pointer is safely Left Click, Middle is safely Right Click
-                        update_mouse_button('index', MouseButton.left, btnIndex)
-                        update_mouse_button('middle', MouseButton.right, btnMiddle)
+                        update_mouse_button('index', MouseButton.right, btnIndex)
+                        update_mouse_button('middle', MouseButton.left, btnMiddle)
                         
                         # Use the dynamically assigned keys from the menu
                         update_keyboard(ring_key_bind, btnRing)
@@ -173,7 +173,7 @@ def main():
     finally:
         for k in key_states:
             if key_states[k]: keyboard.release(k)
-        for b_name, b_val in zip(['index', 'middle'], [MouseButton.left, MouseButton.right]):
+        for b_name, b_val in zip(['index', 'middle'], [MouseButton.right, MouseButton.left]):
             if glove_button_states[b_name]: mouse.release(b_val)
         if 'arduino' in locals() and arduino.is_open:
             arduino.close()

@@ -10,21 +10,19 @@ Adafruit_MPU6050 mpu;
 // --- Radio Setup ---
 // CE is on 9, CSN is on 8
 RF24 radio(9, 8); 
-const byte address[6] = "00001"; // The "channel" we are broadcasting on
-
+const byte address[6] = "00001"; 
+  
 // --- Pin Assignments ---
 const int VRxPin = A0;
 const int VRyPin = A1;
-const int joySwPin = 10;      // Moved to 5 because Pinky is on 7!
+const int joySwPin = 10;      
 
 const int btnIndexPin = 3;
 const int btnMiddlePin = 4;
-const int btnRingPin = 6;    // Updated!
-const int btnPinkyPin = 7;   // Updated!
+const int btnRingPin = 6;    
+const int btnPinkyPin = 7;   
 
 // --- The Data Packet ---
-// This is the exact package we will send over the air.
-// The receiver Arduino MUST have this exact same struct to decode it.
 struct DataPacket {
   int joyX;
   int joyY;
@@ -37,10 +35,15 @@ struct DataPacket {
   byte btnJoyClick;
 };
 
-DataPacket gloveData; // Create a variable to hold our data
+DataPacket gloveData; 
+
+// --- Timer for Serial Printing ---
+unsigned long lastPrintTime = 0;
+const int printInterval = 200; // Print every 200ms
 
 void setup() {
   Serial.begin(115200);
+  while (!Serial) delay(10); // Wait for Serial Monitor to open
 
   // 1. Initialize MPU6050
   if (!mpu.begin()) {
@@ -65,11 +68,11 @@ void setup() {
   }
   
   radio.openWritingPipe(address);
-  // Using LOW power is CRITICAL since we aren't using a capacitor on the 3.3V line.
-  // This prevents power spikes from crashing the MPU6050.
   radio.setPALevel(RF24_PA_LOW); 
   radio.setDataRate(RF24_1MBPS);
-  radio.stopListening(); // Tell it to act as a Transmitter
+  radio.stopListening(); 
+
+  Serial.println("Glove Transmitter Initialized.");
 }
 
 void loop() {
@@ -83,16 +86,39 @@ void loop() {
   gloveData.gyroX = g.gyro.x;
   gloveData.gyroY = g.gyro.y;
 
-  // 3. Read Buttons (Convert LOW to 1 for "Pressed")
+  // 3. Read Buttons (Convert LOW/Pressed to 1)
   gloveData.btnIndex = (digitalRead(btnIndexPin) == LOW) ? 1 : 0;
   gloveData.btnMiddle = (digitalRead(btnMiddlePin) == LOW) ? 1 : 0;
   gloveData.btnRing = (digitalRead(btnRingPin) == LOW) ? 1 : 0;
   gloveData.btnPinky = (digitalRead(btnPinkyPin) == LOW) ? 1 : 0;
   gloveData.btnJoyClick = (digitalRead(joySwPin) == LOW) ? 1 : 0;
   
-  // 4. Send Data Wirelessly!
-  radio.write(&gloveData, sizeof(DataPacket));
+  // 4. Send Data Wirelessly
+  // radio.write returns true if the packet was acknowledged by the receiver
+  bool report = radio.write(&gloveData, sizeof(DataPacket));
 
-  // Run at ~100Hz
+  // 5. Debug Printing (Limited so it doesn't slow down the loop)
+  if (millis() - lastPrintTime >= printInterval) {
+    lastPrintTime = millis();
+
+    if (report) {
+      Serial.print("[OK] ");
+    } else {
+      Serial.print("[FAIL] ");
+    }
+
+    Serial.print("JX:"); Serial.print(gloveData.joyX);
+    Serial.print(" JY:"); Serial.print(gloveData.joyY);
+    Serial.print(" GX:"); Serial.print(gloveData.gyroX, 1);
+    Serial.print(" GY:"); Serial.print(gloveData.gyroY, 1);
+    Serial.print(" BTNS:");
+    Serial.print(gloveData.btnIndex);
+    Serial.print(gloveData.btnMiddle);
+    Serial.print(gloveData.btnRing);
+    Serial.print(gloveData.btnPinky);
+    Serial.println(gloveData.btnJoyClick);
+  }
+
+  // Loop delay for ~100Hz frequency
   delay(10); 
 }
